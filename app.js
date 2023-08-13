@@ -38,7 +38,7 @@ async function getData() {
       ip: data.ip,
       country: data.location.country
     }))
-
+    
     let nextLink = firResponse.result.links.next
     if (!nextLink) return dataObject
 
@@ -61,11 +61,31 @@ async function getData() {
   }
 }
 
+// 分類統計國別
+function countryStatistic(dataObject) {
+  const countryOjbect = {}
+  dataObject.data.forEach(data => {
+    if (countryOjbect[`${data.country}`]) {
+      countryOjbect[`${data.country}`] += 1
+    } else {
+      countryOjbect[`${data.country}`] = 1
+    }
+  })
+
+  return countryOjbect
+}
+
 // 輸出檔案
 async function writeFile() {
   try {
-    const result = await getData()
-    await fs.appendFile(`./files/${dayjs().format('YYYY-MM-DD')}.json`, JSON.stringify(result))
+    const dataObject = await getData()
+    const newDataObject = {
+      total: dataObject.total,
+      countryStatistic: countryStatistic(dataObject),
+      data: dataObject.data
+    }
+
+    await fs.appendFile(`./files/${dayjs().format('YYYY-MM-DD')}.json`, JSON.stringify(newDataObject))
   } catch (err) {
     console.log(err)
   }
