@@ -36,7 +36,8 @@ async function getData() {
     dataObject.total = firResponse.result.total
     dataObject.data = firResponse.result.hits.map(data => ({
       ip: data.ip,
-      country: data.location.country
+      country: data.location.country,
+      services: data.services
     }))
     
     let nextLink = firResponse.result.links.next
@@ -49,7 +50,8 @@ async function getData() {
       response.result.hits.forEach(data => {
         dataObject.data.push({
           ip: data.ip,
-          country: data.location.country
+          country: data.location.country,
+          services: data.services
         })
       })
 
