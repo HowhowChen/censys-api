@@ -3,7 +3,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const { encode } = require('url-encode-decode')
-const fs = require('fs/promises')
+const fs = require('fs')
 const dayjs = require('dayjs')
 
 class CensysAPI {
@@ -12,7 +12,7 @@ class CensysAPI {
   }
 
   // 發請求獲取服務資訊
-  async request(url) {
+  async get(url) {
     try {
       const response = await fetch(url, {
         method: "GET",
@@ -27,38 +27,47 @@ class CensysAPI {
     }
   }
 
-  // 重組自己想獲取的特徵
+  // Censys Search API
   async search(servicePattern_Encode) {
     try {
       const url = `https://search.censys.io/api/v2/hosts/search?q=${servicePattern_Encode}&per_page=100`
-      const firResponse = await this.request(url)
-      const dataObject = {}
+      const firResponse = await this.get(url)
+      
+      let nextLink = firResponse.result.links.next
+      if (!nextLink) return firResponse
 
-      dataObject.total = firResponse.result.total
-      dataObject.data = firResponse.result.hits.map(data => ({
+      while(true) {
+        const nextUrl = `https://search.censys.io/api/v2/hosts/search?q=${servicePattern_Encode}&per_page=100&cursor=${nextLink}`
+        const response = await this.get(nextUrl)
+
+        firResponse.result.hits.push(...response.result.hits)
+
+        nextLink = response.result.links.next
+        if (!nextLink) return firResponse
+      }
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
+  // 獲取需要的選項
+  async searchCustomization(servicePattern_Encode) {
+    try {
+      const result = await this.search(servicePattern_Encode)
+      const dataObject = {}
+      dataObject.data = result.result.hits.map(data => ({
         ip: data.ip,
         country: data.location.country,
         services: data.services
       }))
-      
-      let nextLink = firResponse.result.links.next
-      if (!nextLink) return dataObject
-
-      while(true) {
-        const nextUrl = `https://search.censys.io/api/v2/hosts/search?q=${servicePattern_Encode}&per_page=100&cursor=${nextLink}`
-        const response = await this.request(nextUrl)
-
-        response.result.hits.forEach(data => {
-          dataObject.data.push({
-            ip: data.ip,
-            country: data.location.country,
-            services: data.services
-          })
-        })
-
-        nextLink = response.result.links.next
-        if (!nextLink) return dataObject
+  
+      const newDataObject = {
+        total: result.result.total,
+        country: this.countryStatistic(dataObject),
+        data: dataObject.data
       }
+  
+      return newDataObject
     } catch (err) {
       console.log(err)
     }
@@ -83,26 +92,31 @@ class CensysAPI {
     }
   }
 
-  // 輸出檔案
-  async writeFile(servicePattern_Encode) {
-    try {
-      const dataObject = await this.search(servicePattern_Encode)
-      const newDataObject = {
-        total: dataObject.total,
-        country: this.countryStatistic(dataObject),
-        data: dataObject.data
-      }
+  // 建立資料夾
+  Makedirs(path, options) {
+    if (!fs.existsSync(path)) {
+      fs.mkdirSync(path, options)
+    }
+  }
 
-      await fs.appendFile(`./files/${dayjs().format('YYYY-MM-DD')}.json`, JSON.stringify(newDataObject))
+  // 輸出檔案
+  async writeFile(payloads) {
+    try {
+      this.Makedirs('files', { recursive: true })
+      await fs.promises.appendFile(`./files/${dayjs().format('YYYY-MM-DD')}.json`, JSON.stringify(payloads))
     } catch (err) {
       console.log(err)
     }
   }
 }
 
-const accessToken = process.env.ACCESS_TOKEN
-const censysAPI = new CensysAPI(accessToken)
+async function main() {
+  const accessToken = process.env.ACCESS_TOKEN
+  const censysAPI = new CensysAPI(accessToken)
+  
+  const servicePattern = ''
+  const servicePattern_Encode = encode(servicePattern)
+  censysAPI.writeFile(await censysAPI.searchCustomization(servicePattern_Encode))
+}
 
-const servicePattern = ''
-const servicePattern_Encode = encode(servicePattern)
-censysAPI.writeFile(servicePattern_Encode)
+main()
